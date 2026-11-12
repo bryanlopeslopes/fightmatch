@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function conectado() {
+      return request.auth != null;
+    }
+
+    function participante(lutadores) {
+      return conectado() && request.auth.uid in lutadores;
+    }
+
+    match /lutadores/{uid} {
+      allow read: if conectado();
+      allow create, update, delete: if conectado() && request.auth.uid == uid;
+    }
+
+    match /likes/{likeId} {
+      allow read: if conectado() && (
+        !exists(/databases/$(database)/documents/likes/$(likeId)) ||
+        resource.data.de == request.auth.uid ||
+        resource.data.para == request.auth.uid
+      );
+      allow create: if conectado() && request.resource.data.de == request.auth.uid;
+      allow update: if conectado() &&
+        resource.data.de == request.auth.uid &&
+        request.resource.data.de == request.auth.uid &&
+        request.resource.data.para == resource.data.para;
+      allow delete: if conectado() && resource.data.de == request.auth.uid;
+    }
+
+    match /matches/{matchId} {
+      allow read: if participante(resource.data.lutadores);
+      allow create: if participante(request.resource.data.lutadores);
+      allow update: if participante(resource.data.lutadores) &&
+        request.resource.data.lutadores == resource.data.lutadores;
+      allow delete: if participante(resource.data.lutadores);
+
+      match /mensagens/{mensagemId} {
+        function membroDoMatch() {
+          return conectado() &&
+            request.auth.uid in get(
+              /databases/$(database)/documents/matches/$(matchId)
+            ).data.lutadores;
+        }
+
+        allow read: if membroDoMatch();
+        allow create: if membroDoMatch() &&
+          request.resource.data.uidRemetente == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    match /agendamentos/{agendamentoId} {
+      allow read, delete: if participante(resource.data.lutadores);
+      allow create: if participante(request.resource.data.lutadores);
+      allow update: if participante(resource.data.lutadores) &&
+        request.resource.data.lutadores == resource.data.lutadores;
+    }
+  }
+}
